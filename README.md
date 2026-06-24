@@ -43,7 +43,7 @@ Consulta desde la interfaz web
 
 ### Pantalla inicial
 
-![Pantalla inicial](docs/screenshots/01-home.png)
+![Pantalla inicial](docs/screenshots/Home.png)
 
 ### Documento procesado
 
