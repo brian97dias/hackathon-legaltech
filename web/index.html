@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Capacitaciones SST — Ingesta PDF</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial,
+          sans-serif;
+        margin: 0;
+      }
+      header {
+        padding: 16px 20px;
+        background: #0f172a;
+        color: #fff;
+      }
+      main {
+        padding: 20px;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      section {
+        background: #fff;
+        color: #111;
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button {
+        padding: 8px 12px;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        background: #111;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      input[type="file"],
+      input[type="text"],
+      select {
+        padding: 8px;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+      }
+      small.mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      ul.clean {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      li.card {
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 12px;
+        margin: 8px 0;
+      }
+      details {
+        margin-top: 6px;
+      }
+      pre {
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+      .muted {
+        color: #6b7280;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 16px;
+      }
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Capacitaciones SST — Ingesta de Decreto</h1>
+      <div class="muted">
+        Sube un PDF, el backend lo trocea por capítulos y artículos y aquí verás
+        el resultado.
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <div class="row">
+          <input id="pdfFile" type="file" accept="application/pdf" />
+          <input id="title" type="text" placeholder="Título opcional" />
+          <button id="btnUpload">Subir y procesar</button>
+          <button id="btnReload">Recargar documentos</button>
+          <span class="muted"
+            >API: <span id="apiBase" class="mono"></span
+          ></span>
+        </div>
+        <div id="status" class="muted" style="margin-top: 8px"></div>
+      </section>
+
+      <section class="grid">
+        <div>
+          <h2>Documentos</h2>
+          <div class="row" style="margin: 8px 0">
+            <select id="docSelect" style="min-width: 320px"></select>
+          </div>
+          <div id="docInfo" class="muted"></div>
+
+          <h3 style="margin-top: 16px">Capítulos</h3>
+          <ul id="chapterList" class="clean"></ul>
+        </div>
+
+        <div>
+          <div class="row" style="justify-content: space-between">
+            <h2>Artículos</h2>
+            <label class="row"
+              >Por página
+              <select id="limit">
+                <option>5</option>
+                <option selected>10</option>
+                <option>20</option>
+                <option>50</option>
+              </select>
+            </label>
+          </div>
+          <ul id="articleList" class="clean"></ul>
+          <div class="row" style="justify-content: space-between">
+            <button id="prevBtn">← Anterior</button>
+            <div class="muted" id="pagerInfo"></div>
+            <button id="nextBtn">Siguiente →</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // API_BASE configurable: por defecto mismo origen; o usa ?api=http://127.0.0.1:8000
+      const qs = new URLSearchParams(location.search);
+      const API_BASE = (
+        qs.get("api") ||
+        (location.port === "5500"
+          ? "http://127.0.0.1:8000"
+          : window.location.origin)
+      ).replace(/\/$/, "");
+      document.getElementById("apiBase").textContent = API_BASE;
+
+      const els = {
+        status: document.getElementById("status"),
+        pdfFile: document.getElementById("pdfFile"),
+        title: document.getElementById("title"),
+        btnUpload: document.getElementById("btnUpload"),
+        btnReload: document.getElementById("btnReload"),
+        docSelect: document.getElementById("docSelect"),
+        docInfo: document.getElementById("docInfo"),
+        chapterList: document.getElementById("chapterList"),
+        articleList: document.getElementById("articleList"),
+        prevBtn: document.getElementById("prevBtn"),
+        nextBtn: document.getElementById("nextBtn"),
+        limit: document.getElementById("limit"),
+        pagerInfo: document.getElementById("pagerInfo"),
+      };
+
+      let currentDoc = null;
+      let offset = 0;
+
+      function setStatus(msg) {
+        els.status.innerHTML = msg || "";
+      }
+
+      async function uploadPdf() {
+        const f = els.pdfFile.files[0];
+        if (!f) {
+          setStatus("Selecciona un PDF.");
+          return;
+        }
+        try {
+          els.btnUpload.disabled = true;
+          setStatus("Subiendo…");
+          const fd = new FormData();
+          fd.append("file", f, f.name);
+          const t = els.title.value.trim();
+          if (t) fd.append("title", t);
+          const res = await fetch(`${API_BASE}/upload-pdf`, {
+            method: "POST",
+            body: fd,
+          });
+          const text = await res.text();
+          if (!res.ok) throw new Error(`HTTP ${res.status} — ${text}`);
+          const data = JSON.parse(text);
+          setStatus(
+            `✅ Documento <b>${data.document_id}</b> — Capítulos: ${data.chapters} | Artículos: ${data.articles}`,
+          );
+          await loadDocuments();
+          // Seleccionar el documento recién subido
+          els.docSelect.value = data.document_id;
+          els.docSelect.dispatchEvent(new Event("change"));
+        } catch (e) {
+          console.error(e);
+          setStatus(`❌ ${e.message}`);
+        } finally {
+          els.btnUpload.disabled = false;
+        }
+      }
+
+      async function loadDocuments() {
+        els.docSelect.innerHTML = "";
+        const res = await fetch(`${API_BASE}/documents`);
+        const docs = await res.json();
+        for (const d of docs) {
+          const opt = document.createElement("option");
+          opt.value = d.id;
+          opt.textContent = `${d.title} — ${d.id.slice(0, 8)}…`;
+          els.docSelect.appendChild(opt);
+        }
+        if (docs.length) {
+          currentDoc = docs[0];
+          els.docSelect.value = docs[0].id;
+          showDocInfo(docs[0]);
+        } else {
+          currentDoc = null;
+          els.chapterList.innerHTML = "";
+          els.articleList.innerHTML = "";
+          setStatus("Aún no hay documentos.");
+        }
+      }
+
+      function showDocInfo(d) {
+        els.docInfo.innerHTML = `<div><b>${d.title}</b><br><small class="mono">${d.id}</small></div>`;
+      }
+
+      async function loadChapters(docId) {
+        els.chapterList.innerHTML = "";
+        const res = await fetch(`${API_BASE}/documents/${docId}/chapters`);
+        const data = await res.json();
+        if (!data.length) {
+          els.chapterList.innerHTML = '<li class="muted">(Sin capítulos)</li>';
+          return;
+        }
+        for (const c of data) {
+          const li = document.createElement("li");
+          li.className = "card";
+          li.innerHTML = `<div><b>Capítulo ${c.roman}</b><div class="muted">${c.title || "(Sin título)"}</div></div>`;
+          els.chapterList.appendChild(li);
+        }
+      }
+
+      async function loadArticles(docId, lim, off) {
+        els.articleList.innerHTML = '<li class="muted">Cargando…</li>';
+        const res = await fetch(
+          `${API_BASE}/documents/${docId}/articles?limit=${lim}&offset=${off}`,
+        );
+        const data = await res.json();
+        els.articleList.innerHTML = "";
+        if (!data.length) {
+          els.articleList.innerHTML =
+            '<li class="muted">(Sin artículos en esta página)</li>';
+        }
+        for (const a of data) {
+          const li = document.createElement("li");
+          li.className = "card";
+          li.innerHTML = `
+          <div class="muted">Capítulo ${a.chapter_roman || "–"}</div>
+          <div><b>Artículo ${a.number}:</b> ${a.title || "(Sin título)"}</div>
+          <details>
+            <summary>Ver texto completo</summary>
+            <pre>${a.content.replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[m])}</pre>
+          </details>
+        `;
+          els.articleList.appendChild(li);
+        }
+        els.pagerInfo.textContent = `Offset: ${off} · Límite: ${lim}`;
+      }
+
+      // Eventos UI
+      els.btnUpload.addEventListener("click", uploadPdf);
+      els.btnReload.addEventListener("click", loadDocuments);
+
+      els.docSelect.addEventListener("change", async (e) => {
+        const id = e.target.value;
+        // obtén doc completo de /documents para mostrar info
+        const res = await fetch(`${API_BASE}/documents`);
+        const docs = await res.json();
+        const d = docs.find((x) => x.id === id);
+        if (d) {
+          currentDoc = d;
+          showDocInfo(d);
+        }
+        offset = 0;
+        await loadChapters(id);
+        await loadArticles(id, parseInt(els.limit.value, 10), offset);
+      });
+
+      els.limit.addEventListener("change", async () => {
+        if (!currentDoc) return;
+        offset = 0;
+        await loadArticles(
+          currentDoc.id,
+          parseInt(els.limit.value, 10),
+          offset,
+        );
+      });
+
+      els.prevBtn.addEventListener("click", async () => {
+        if (!currentDoc) return;
+        const lim = parseInt(els.limit.value, 10);
+        offset = Math.max(0, offset - lim);
+        await loadArticles(currentDoc.id, lim, offset);
+      });
+
+      els.nextBtn.addEventListener("click", async () => {
+        if (!currentDoc) return;
+        const lim = parseInt(els.limit.value, 10);
+        offset = offset + lim;
+        await loadArticles(currentDoc.id, lim, offset);
+      });
+
+      // Inicio
+      (async function init() {
+        try {
+          await loadDocuments();
+          if (els.docSelect.value) {
+            els.docSelect.dispatchEvent(new Event("change"));
+          }
+        } catch (e) {
+          setStatus("No pude cargar documentos. ¿API arriba?");
+        }
+      })();
+    </script>
+  </body>
+</html>
