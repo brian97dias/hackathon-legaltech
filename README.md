@@ -47,7 +47,7 @@ Consulta desde la interfaz web
 
 ### Documento procesado
 
-![Documento procesado](docs/screenshots/02-document-processed.png)
+![Documento procesado](docs/screenshots/document-processed.png)
 
 ## Tecnologías utilizadas
 
