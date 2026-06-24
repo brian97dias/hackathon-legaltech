@@ -1,5 +1,6 @@
 # Hackathon LegalTech - Ingesta de Decretos SST
 Publicacion: https://www.instagram.com/p/DQ60GCtgUN0/?img_index=10
+
 Prototipo funcional desarrollado durante un hackathon multidisciplinario de derecho. El sistema permite cargar un decreto en formato PDF, procesar su contenido automáticamente y visualizarlo de forma estructurada por documentos, capítulos y artículos.
 
 El objetivo técnico del prototipo fue convertir normativa extensa de Seguridad y Salud en el Trabajo (SST) en contenido navegable, dejando la base preparada para futuras funcionalidades de capacitación interna, seguimiento de avance, evaluaciones, alertas y certificados.
